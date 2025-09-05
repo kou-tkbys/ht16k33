@@ -1,12 +1,13 @@
-// ht16k33/driver.go
-//
 // Official Datasheet (HT16K33/HT16K33A):
 // https://www.holtek.com/webapi/116711/HT16K33Av102.pdf
 //
 // This driver does not cover all functions of the HT16K33.
-// functions of the HT16K33.
-// It only implements the necessary features to control two 8-digit, common-cathode
-// 7-segment displays using a single HT16K33 IC.
+// It implements the necessary features to control two 8-digit,
+// common-cathode 7-segment displays using a single HT16K33 IC.
+//
+// The driver provides two ways to interact with the displays:
+//  1. As two independent 8-digit displays (`SetDigitOnDisplay`, `WriteString`).
+//  2. As a single, continuous 16-digit display (`SetDigit16`).
 //
 // Wiring Overview:
 // This driver utilizes a clever multiplexing technique to drive 16 digits
@@ -38,6 +39,8 @@
 //   - ROW8-ROW15 are connected to the segment anodes (a, b, c, d, e, f, g, dp)
 //     of Display B.
 package ht16k33
+
+import "time"
 
 const (
 	// Commands for HT16K33
@@ -84,6 +87,9 @@ type Device struct {
 	// Display RAM buffer for the HT16K33 (16x8 bits).
 	// HT16K33の表示用RAMバッファ(16x8ビット)
 	buffer [16]byte
+	// currentBrightness holds the current brightness level (0-15).
+	// currentBrightnessは、現在の明るさのレベル(0-15)を保持する。
+	currentBrightness uint8
 }
 
 // New creates a new Device instance.
@@ -91,8 +97,9 @@ type Device struct {
 // Newは、新しいDeviceインスタンスを作る
 func New(bus I2CBus, address uint8) Device {
 	return Device{
-		bus:     bus,
-		Address: address,
+		bus:               bus,
+		Address:           address,
+		currentBrightness: 15, // Default to max brightness
 	}
 }
 
@@ -120,16 +127,16 @@ func (d *Device) ClearAll() {
 	}
 }
 
-// SetDigit sets a single digit on one of the two displays.
+// SetDigitOnDisplay sets a single digit on one of the two displays.
 // It first clears the previous content at that position for that display.
 //
-// SetDigitは、2つのディスプレイのいずれかに1桁を設定する。
+// SetDigitOnDisplayは、2つのディスプレイのいずれかに1桁を設定する。
 //
 // display: 0 for the first display (A), 1 for the second (B).
 // position: 0-7, the digit position.
 // num: 0-9, or use a value >= 10 for a blank digit.
 // dot: true to light up the decimal point.
-func (d *Device) SetDigit(display int, position int, num byte, dot bool) {
+func (d *Device) SetDigitOnDisplay(display int, position int, num byte, dot bool) {
 	if display < 0 || display >= NumDisplays || position < 0 || position >= MaxDigitsPerDisplay {
 		return
 	}
@@ -163,17 +170,58 @@ func (d *Device) SetDigit(display int, position int, num byte, dot bool) {
 	}
 }
 
-// ClearDisplay clears one of the two 8-digit displays.
+// SetDigit16 treats the two 8-digit displays as a single 16-digit display.
+// It sets a single digit at a position from 0 to 15.
+//
+// SetDigit16は、2つの8桁ディスプレイを1つの16桁ディスプレイとして扱う。
+// 0から15までの位置に1桁を設定する。
+//
+// position: 0-15, the digit position across both displays.
+// num: 0-9, or use a value >= 10 for a blank digit.
+// dot: true to light up the decimal point.
+func (d *Device) SetDigit16(position int, num byte, dot bool) {
+	if position < 0 || position >= MaxDigitsPerDisplay*NumDisplays {
+		return // 0-15の範囲外なら何もしない
+	}
+
+	display := position / MaxDigitsPerDisplay        // 0-7 -> 0, 8-15 -> 1
+	digitInDisplay := position % MaxDigitsPerDisplay // 8 -> 0, 9 -> 1, ...
+
+	d.SetDigitOnDisplay(display, digitInDisplay, num, dot)
+}
+
+// ClearOnDisplay clears one of the two 8-digit displays.
 // display: 0 for display A, 1 for display B.
 //
-// ClearDisplayは、2つの8桁ディスプレイのうちの1つをクリアする。
-func (d *Device) ClearDisplay(display int) {
+// ClearOnDisplayは、2つの8桁ディスプレイのうちの1つをクリアする。
+func (d *Device) ClearOnDisplay(display int) {
 	if display < 0 || display >= NumDisplays {
 		return
 	}
 	for pos := 0; pos < MaxDigitsPerDisplay; pos++ {
-		d.SetDigit(display, pos, blankPatternIndex, false)
+		d.SetDigitOnDisplay(display, pos, blankPatternIndex, false)
 	}
+}
+
+// ClearFadeOnDisplay clears one of the two 8-digit displays with a fade effect.
+// It clears the display in the buffer and then performs a fade-out/fade-in.
+//
+// ClearFadeOnDisplayは、フェード効果付きで2つの8桁ディスプレイのうちの1つをクリアする。
+// バッファ内のディスプレイをクリアした後、フェードアウト/フェードインを実行する。
+func (d *Device) ClearFadeOnDisplay(display int, delay time.Duration) {
+	if display < 0 || display >= NumDisplays {
+		return
+	}
+	d.ClearOnDisplay(display) // Clear the relevant part of the buffer
+	d.DisplayFade(delay)      // Apply the fade effect to show the change
+}
+
+// ClearAllFade clears both displays with a fade effect.
+//
+// ClearAllFadeは、フェード効果付きで両方のディスプレイをクリアする。
+func (d *Device) ClearAllFade(delay time.Duration) {
+	d.ClearAll()
+	d.DisplayFade(delay)
 }
 
 // WriteString displays a string on one of the two displays.
@@ -188,7 +236,7 @@ func (d *Device) WriteString(display int, s string) {
 		return
 	}
 
-	d.ClearDisplay(display)
+	d.ClearOnDisplay(display)
 
 	digitPos := 0
 	runes := []rune(s) // runeのスライスに変換して、マルチバイト文字にも対応する
@@ -203,7 +251,7 @@ func (d *Device) WriteString(display int, s string) {
 				i++ // ドットを処理したので、次の文字はスキップ
 			}
 
-			d.SetDigit(display, digitPos, num, dot)
+			d.SetDigitOnDisplay(display, digitPos, num, dot)
 			digitPos++
 		}
 		// 数字でもドットでもない文字は、ここでは単純に無視
@@ -218,6 +266,30 @@ func (d *Device) Display() {
 	d.bus.Tx(uint16(d.Address), data, nil)
 }
 
+// DisplayFade transfers the buffer's content with a fade-out/fade-in effect.
+// It's a visual effect and will block for the duration of the fade.
+//
+// DisplayFadeは、フェードアウト/フェードイン効果付きでバッファの内容を転送する。
+// これは視覚効果であり、フェード中は処理をブロックする。
+func (d *Device) DisplayFade(delay time.Duration) {
+	// Fade out
+	for i := int(d.currentBrightness); i >= 0; i-- {
+		d.SetBrightness(uint8(i))
+		time.Sleep(delay)
+	}
+
+	// Update the display content
+	d.Display()
+
+	// Fade in
+	for i := 0; i <= 15; i++ {
+		d.SetBrightness(uint8(i))
+		time.Sleep(delay)
+	}
+	// Ensure brightness is set to the final desired level
+	d.SetBrightness(15)
+}
+
 // SetBrightness sets the display brightness (0-15).
 //
 // SetBrightnessは、ディスプレイの明るさを設定する(0-15)。
@@ -225,5 +297,6 @@ func (d *Device) SetBrightness(brightness uint8) {
 	if brightness > 15 {
 		brightness = 15
 	}
+	d.currentBrightness = brightness
 	d.bus.Tx(uint16(d.Address), []byte{ht16k33SetBrightness | brightness}, nil)
 }

@@ -22,8 +22,8 @@ func (m *mockI2C) Tx(addr uint16, w, r []byte) error {
 	return nil
 }
 
-// TestSetDigit verifies that setting a single digit correctly modifies the buffer.
-func TestSetDigit(t *testing.T) {
+// TestSetDigitOnDisplay verifies that setting a single digit correctly modifies the buffer.
+func TestSetDigitOnDisplay(t *testing.T) {
 	testCases := []struct {
 		name           string
 		display        int
@@ -73,8 +73,47 @@ func TestSetDigit(t *testing.T) {
 			mockBus := &mockI2C{}
 			device := New(mockBus, 0x70) // Creates a device with a zeroed buffer
 
-			device.SetDigit(tc.display, tc.position, tc.num, tc.dot)
+			device.SetDigitOnDisplay(tc.display, tc.position, tc.num, tc.dot)
 
+			if !bytes.Equal(device.buffer[:], tc.expectedBuffer[:]) {
+				t.Errorf("FAIL: Buffer content is wrong!\nExpected: %x\nGot:      %x", tc.expectedBuffer[:], device.buffer[:])
+			}
+		})
+	}
+}
+
+// TestSetDigit16 verifies that setting a digit on the virtual 16-digit display works.
+func TestSetDigit16(t *testing.T) {
+	testCases := []struct {
+		name           string
+		position       int
+		num            byte
+		dot            bool
+		expectedBuffer [16]byte
+	}{
+		{
+			name:     "Position 7 (end of first display), Number 1",
+			position: 7,
+			num:      1,
+			dot:      false,
+			// Equivalent to SetDigitOnDisplay(0, 7, 1, false)
+			expectedBuffer: [16]byte{0, 1 << 7, 1 << 7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+		},
+		{
+			name:     "Position 8 (start of second display), Number 2",
+			position: 8,
+			num:      2,
+			dot:      true,
+			// Equivalent to SetDigitOnDisplay(1, 0, 2, true)
+			expectedBuffer: [16]byte{0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 0, 1, 1},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			mockBus := &mockI2C{}
+			device := New(mockBus, 0x70)
+			device.SetDigit16(tc.position, tc.num, tc.dot)
 			if !bytes.Equal(device.buffer[:], tc.expectedBuffer[:]) {
 				t.Errorf("FAIL: Buffer content is wrong!\nExpected: %x\nGot:      %x", tc.expectedBuffer[:], device.buffer[:])
 			}
@@ -134,8 +173,8 @@ func TestDisplay(t *testing.T) {
 	}
 }
 
-// TestClearDisplay verifies that a single display can be cleared.
-func TestClearDisplay(t *testing.T) {
+// TestClearOnDisplay verifies that a single display can be cleared.
+func TestClearOnDisplay(t *testing.T) {
 	mockBus := &mockI2C{}
 	device := New(mockBus, 0x70)
 
@@ -144,7 +183,7 @@ func TestClearDisplay(t *testing.T) {
 	device.WriteString(1, "99")
 
 	// Now clear display 0
-	device.ClearDisplay(0)
+	device.ClearOnDisplay(0)
 
 	// To get the expected state, create a new device and only write to display 1.
 	// This is clearer than calculating the expected buffer manually.
@@ -153,7 +192,22 @@ func TestClearDisplay(t *testing.T) {
 	expectedBuffer := expectedDevice.buffer
 
 	if !bytes.Equal(device.buffer[:], expectedBuffer[:]) {
-		t.Errorf("FAIL: Buffer content after ClearDisplay is wrong!\nExpected: %x\nGot:      %x", expectedBuffer[:], device.buffer[:])
+		t.Errorf("FAIL: Buffer content after ClearOnDisplay is wrong!\nExpected: %x\nGot:      %x", expectedBuffer[:], device.buffer[:])
+	}
+}
+
+// TestClearAll verifies that both displays can be cleared.
+func TestClearAll(t *testing.T) {
+	mockBus := &mockI2C{}
+	device := New(mockBus, 0x70)
+
+	device.WriteString(0, "123")
+	device.WriteString(1, "456")
+	device.ClearAll()
+
+	expectedBuffer := [16]byte{} // All zeros
+	if !bytes.Equal(device.buffer[:], expectedBuffer[:]) {
+		t.Errorf("FAIL: Buffer content after ClearAll is wrong!\nExpected: %x\nGot:      %x", expectedBuffer[:], device.buffer[:])
 	}
 }
 
