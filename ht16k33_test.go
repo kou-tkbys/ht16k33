@@ -211,6 +211,30 @@ func TestClearAll(t *testing.T) {
 	}
 }
 
+// TestLightUpAll verifies that all segments are turned on.
+func TestLightUpAll(t *testing.T) {
+	mockBus := &mockI2C{}
+	device := New(mockBus, 0x70)
+
+	device.LightUpAll()
+
+	var expectedBuffer [16]byte
+	for i := range expectedBuffer {
+		expectedBuffer[i] = 0xFF
+	}
+
+	if !bytes.Equal(device.buffer[:], expectedBuffer[:]) {
+		t.Errorf("FAIL: Buffer content after LightUpAll is wrong!\nExpected: %x\nGot:      %x", expectedBuffer[:], device.buffer[:])
+	}
+
+	// Also test that Display sends the correct data
+	device.Display()
+	expectedI2CData := append([]byte{0x00}, expectedBuffer[:]...)
+	if !bytes.Equal(mockBus.data, expectedI2CData) {
+		t.Errorf("FAIL: Data sent by Display() after LightUpAll is wrong!\nExpected: %x\nGot:      %x", expectedI2CData, mockBus.data)
+	}
+}
+
 // ExampleDevice_WriteString shows how to use the Device to write strings
 // to both displays.
 //

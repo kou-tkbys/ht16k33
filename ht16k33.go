@@ -340,6 +340,30 @@ func (d *Device) Display() {
 	d.bus.Tx(uint16(d.Address), data, nil)
 }
 
+// LightUpAll turns on all segments of all digits on both displays.
+// This effectively makes the displays act as a simple light source.
+//
+// LightUpAllは、両方のディスプレイのすべての桁のすべてのセグメントを点灯させる。
+// これにより、ディスプレイが単純な光源として機能するようになる。
+func (d *Device) LightUpAll() {
+	for i := range d.buffer {
+		d.buffer[i] = 0xFF // Turn on all 8 digits for this segment row
+	}
+}
+
+// LightUpAllFadeBlocking turns on all segments with a fade-in effect.
+// This is a blocking function.
+//
+// LightUpAllFadeBlockingは、フェードイン効果付きですべてのセグメントを点灯させる。
+// これはブロッキング関数。
+func (d *Device) LightUpAllFadeBlocking(delay time.Duration) {
+	d.LightUpAll()
+	for i := 0; i <= 15; i++ {
+		d.SetBrightness(uint8(i))
+		time.Sleep(delay)
+	}
+}
+
 // DisplayFadeBlocking is a blocking version of the fade effect.
 // For non-blocking behavior, use StartFade() and UpdateFade() instead.
 //

@@ -73,7 +73,11 @@ func main() {
 				display.ClearOnDisplay(0)
 				display.StartFade(fadeDelay)
 			case 5:
-				println("Demo Finished! Restarting...")
+				println("6. Lighting up all segments (illumination mode)...")
+				// これはブロッキング関数なので、完了するまでここで待機する
+				display.LightUpAllFadeBlocking(fadeDelay)
+			case 6:
+				println("7. Demo Finished! Restarting...")
 				demoState = -1 // 次のループで0になる
 			}
 			demoState++
