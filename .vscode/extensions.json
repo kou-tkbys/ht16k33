@@ -1,0 +1,6 @@
+{
+    "recommendations": [
+        "tinygo.vscode-tinygo",
+        "golang.go"
+    ]
+}
