@@ -64,8 +64,13 @@ func main() {
 				println("4. Writing a long number with fade...")
 				longNumber := "12345678.9012345."
 				for i, char := range longNumber {
-					// この部分はブロッキングのまま、デモとして分かりやすくする
-					display.SetDigit16(i, byte(char-'0'), false)
+					// WriteStringはディスプレイをクリアしてしまうので、16
+					// 桁全体に書き込むにはSetDigit16をループで使う。
+					// ドットはWriteStringが自動で処理してくれるが、
+					// SetDigit16の場合は自分で処理する必要があるため。
+					// ここでは簡単にするためにドットは無視。`char` をその
+					// まま渡すのがポイント。
+					display.SetDigit16(i, char, false)
 				}
 				display.StartFade(fadeDelay)
 			case 4:

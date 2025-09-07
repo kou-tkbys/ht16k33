@@ -1,4 +1,4 @@
-// To run test `tinygo test ./ht16k33/`
+// To run test `tinygo test .`
 
 package ht16k33
 
@@ -28,7 +28,7 @@ func TestSetDigitOnDisplay(t *testing.T) {
 		name           string
 		display        int
 		position       int
-		num            byte
+		char           rune
 		dot            bool
 		expectedBuffer [16]byte
 	}{
@@ -36,7 +36,7 @@ func TestSetDigitOnDisplay(t *testing.T) {
 			name:     "Display 0, Position 0, Number 8, with dot",
 			display:  0,
 			position: 0,
-			num:      8,
+			char:     '8',
 			dot:      true,
 			// For number 8 (all segments on) at position 0, bit 0 should be set for rows 0-6.
 			// For dot, bit 0 should be set for row 7.
@@ -49,7 +49,7 @@ func TestSetDigitOnDisplay(t *testing.T) {
 			name:     "Display 1, Position 7, Number 1, no dot",
 			display:  1,
 			position: 7,
-			num:      1,
+			char:     '1',
 			dot:      false,
 			// For number 1 (segments b, c) at position 7, bit 7 should be set for rows 8+1 and 8+2.
 			expectedBuffer: [16]byte{
@@ -61,7 +61,7 @@ func TestSetDigitOnDisplay(t *testing.T) {
 			name:     "Set blank on Display 0, Position 3",
 			display:  0,
 			position: 3,
-			num:      blankPatternIndex, // blank
+			char:     ' ', // blank
 			dot:      false,
 			// Should result in an all-zero buffer as it clears the position, assuming buffer was initially zero.
 			expectedBuffer: [16]byte{}, // This is equivalent to a zero-filled array.
@@ -73,7 +73,7 @@ func TestSetDigitOnDisplay(t *testing.T) {
 			mockBus := &mockI2C{}
 			device := New(mockBus, 0x70) // Creates a device with a zeroed buffer
 
-			device.SetDigitOnDisplay(tc.display, tc.position, tc.num, tc.dot)
+			device.SetDigitOnDisplay(tc.display, tc.position, tc.char, tc.dot)
 
 			if !bytes.Equal(device.buffer[:], tc.expectedBuffer[:]) {
 				t.Errorf("FAIL: Buffer content is wrong!\nExpected: %x\nGot:      %x", tc.expectedBuffer[:], device.buffer[:])
@@ -87,14 +87,14 @@ func TestSetDigit16(t *testing.T) {
 	testCases := []struct {
 		name           string
 		position       int
-		num            byte
+		char           rune
 		dot            bool
 		expectedBuffer [16]byte
 	}{
 		{
 			name:     "Position 7 (end of first display), Number 1",
 			position: 7,
-			num:      1,
+			char:     '1',
 			dot:      false,
 			// Equivalent to SetDigitOnDisplay(0, 7, 1, false)
 			expectedBuffer: [16]byte{0, 1 << 7, 1 << 7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
@@ -102,7 +102,7 @@ func TestSetDigit16(t *testing.T) {
 		{
 			name:     "Position 8 (start of second display), Number 2",
 			position: 8,
-			num:      2,
+			char:     '2',
 			dot:      true,
 			// Equivalent to SetDigitOnDisplay(1, 0, 2, true)
 			expectedBuffer: [16]byte{0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 0, 1, 1},
@@ -113,7 +113,7 @@ func TestSetDigit16(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			mockBus := &mockI2C{}
 			device := New(mockBus, 0x70)
-			device.SetDigit16(tc.position, tc.num, tc.dot)
+			device.SetDigit16(tc.position, tc.char, tc.dot)
 			if !bytes.Equal(device.buffer[:], tc.expectedBuffer[:]) {
 				t.Errorf("FAIL: Buffer content is wrong!\nExpected: %x\nGot:      %x", tc.expectedBuffer[:], device.buffer[:])
 			}

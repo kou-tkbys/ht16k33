@@ -63,50 +63,73 @@ const (
 	fadeStateIn
 )
 
-// 7-segment display number patterns (g-f-e-d-c-b-a) plus a blank pattern.
-// A map is more flexible for alphanumeric characters.
-//
-// マップは、英数字を扱いやすい。
-var font = map[rune]byte{
-	'0':  0b00111111,
-	'1':  0b00000110,
-	'2':  0b01011011,
-	'3':  0b01001111,
-	'4':  0b01100110,
-	'5':  0b01101101,
-	'6':  0b01111101,
-	'7':  0b00000111,
-	'8':  0b01111111,
-	'9':  0b01101111,
-	'A':  0b01110111,
-	'B':  0b01111100, // Lowercase 'b'
-	'C':  0b00111001,
-	'D':  0b01011110, // Lowercase 'd'
-	'E':  0b01111001,
-	'F':  0b01110001,
-	'G':  0b00111101,
-	'H':  0b01110110,
-	'I':  0b00000110, // Same as 1
-	'J':  0b00011110,
-	'L':  0b00111000,
-	'O':  0b00111111, // Same as 0
-	'P':  0b01110011,
-	'Q':  0b01100111,
-	'R':  0b01010000, // Lowercase 'r'
-	'S':  0b01101101, // Same as 5
-	'U':  0b00111110,
-	'Y':  0b01101110,
-	' ':  0b00000000, // Space
-	'-':  0b01000000, // Minus
-	'_':  0b00001000, // Underscore
-	'\'': 0b00000010, // Apostrophe
-	'"':  0b00100010, // Double quote
-	'=':  0b01001000, // Equals
-	'?':  0b01010011, // Question mark
-	// Add more characters as needed!
-}
+// --- 7-Segment Font Definition ---
 
-const blankPatternIndex = 10
+// The segments are mapped to bits in a byte, following the common g-f-e-d-c-b-a order.
+// セグメントは一般的な g-f-e-d-c-b-a の順でバイト内のビットにマッピングされている。
+//
+//	 a
+//	---
+//
+// f|g|b
+//
+//	---
+//
+// e| |c
+//
+//	---
+//	 d
+const (
+	segA byte = 1 << 0
+	segB byte = 1 << 1
+	segC byte = 1 << 2
+	segD byte = 1 << 3
+	segE byte = 1 << 4
+	segF byte = 1 << 5
+	segG byte = 1 << 6
+)
+
+// font maps a rune to its 7-segment pattern. This visual representation makes
+// it much easier to add or modify characters.
+// fontは、ルーン文字を7セグメントのパターンにマッピングする。
+// 視覚的にどのセグメントが光るのかをわかりやすく表現している。
+var font = map[rune]byte{
+	'0':  segA | segB | segC | segD | segE | segF,
+	'1':  segB | segC,
+	'2':  segA | segB | segG | segE | segD,
+	'3':  segA | segB | segG | segC | segD,
+	'4':  segF | segG | segB | segC,
+	'5':  segA | segF | segG | segC | segD,
+	'6':  segA | segF | segE | segD | segC | segG,
+	'7':  segA | segB | segC,
+	'8':  segA | segB | segC | segD | segE | segF | segG,
+	'9':  segA | segB | segC | segD | segF | segG,
+	'A':  segA | segB | segC | segE | segF | segG,
+	'B':  segF | segE | segD | segC | segG, // Lowercase 'b'
+	'C':  segA | segF | segE | segD,
+	'D':  segB | segC | segD | segE | segG, // Lowercase 'd'
+	'E':  segA | segF | segG | segE | segD,
+	'F':  segA | segF | segG | segE,
+	'G':  segA | segF | segE | segD | segC,
+	'H':  segF | segE | segG | segB | segC,
+	'I':  segB | segC, // Same as 1
+	'J':  segB | segC | segD | segE,
+	'L':  segF | segE | segD,
+	'O':  segA | segB | segC | segD | segE | segF, // Same as 0
+	'P':  segA | segB | segG | segF | segE,
+	'Q':  segA | segB | segC | segF | segG,
+	'R':  segE | segG,                      // Lowercase 'r'
+	'S':  segA | segF | segG | segC | segD, // Same as 5
+	'U':  segB | segC | segD | segE | segF,
+	'Y':  segF | segG | segB | segC | segD,
+	' ':  0, // Space
+	'-':  segG,
+	'_':  segD,
+	'\'': segB,
+	'"':  segB | segF,
+	'=':  segD | segG,
+	'?':  segA | segB | segG | segE,
+}
 
 // I2CBus is an interface that abstracts the I2C Tx method we need.
 //
@@ -176,40 +199,17 @@ func (d *Device) ClearAll() {
 //
 // SetDigitOnDisplayは、2つのディスプレイのいずれかに1桁を設定する。
 //
-// display: 0 for the first display (A), 1 for the second (B).
-// position: 0-7, the digit position.
-// num: 0-9, or use a value >= 10 for a blank digit.
-// dot: true to light up the decimal point.
-func (d *Device) SetDigitOnDisplay(display int, position int, num byte, dot bool) {
-	if display < 0 || display >= NumDisplays || position < 0 || position >= MaxDigitsPerDisplay {
-		return
+// display: 0 for the first display (A), 1 for the second (B)
+// position: 0-7, the digit position
+// char: The character to display. If not in the font map, it will be blank.
+// dot: true to light up the decimal point
+func (d *Device) SetDigitOnDisplay(display int, position int, char rune, dot bool) {
+	pattern, ok := font[char]
+	if !ok {
+		// If the character is not in the font map, use a blank pattern.
+		pattern = font[' ']
 	}
-
-	// For SetDigitOnDisplay, we still need to handle the old `num` byte argument.
-	// We'll map it to a character.
-	char := rune('0' + num)
-	pattern, _ := font[char] // If num > 9, it won't be in the map, pattern will be 0 (blank)
-
-	rowOffset := display * MaxDigitsPerDisplay // 0 for display A, 8 for display B
-	mask := ^byte(1 << position)               // Mask to clear the bit for the current position
-
-	// Clear the bits for this digit position first
-	for i := 0; i < MaxDigitsPerDisplay; i++ { // 7 segments + 1 dot
-		d.buffer[rowOffset+i] &= mask
-	}
-
-	// Set the new segment bits (a-g -> ROW0-6 for display 0, ROW8-14 for display 1)
-	for seg := 0; seg < 7; seg++ {
-		if (pattern>>seg)&1 == 1 {
-			d.buffer[rowOffset+seg] |= (1 << position)
-		}
-	}
-
-	// Set the new dot bit (dp -> ROW7 for display 0, ROW15 for display 1)
-	if dot {
-		dotRow := rowOffset + 7
-		d.buffer[dotRow] |= (1 << position)
-	}
+	d.setPattern(display, position, pattern, dot)
 }
 
 // SetDigit16 treats the two 8-digit displays as a single 16-digit display.
@@ -219,17 +219,16 @@ func (d *Device) SetDigitOnDisplay(display int, position int, num byte, dot bool
 // 0から15までの位置に1桁を設定する。
 //
 // position: 0-15, the digit position across both displays.
-// num: 0-9, or use a value >= 10 for a blank digit.
+// char: The character to display.
 // dot: true to light up the decimal point.
-func (d *Device) SetDigit16(position int, num byte, dot bool) {
+func (d *Device) SetDigit16(position int, char rune, dot bool) {
 	if position < 0 || position >= MaxDigitsPerDisplay*NumDisplays {
 		return // 0-15の範囲外なら何もしない
 	}
 
 	display := position / MaxDigitsPerDisplay        // 0-7 -> 0, 8-15 -> 1
 	digitInDisplay := position % MaxDigitsPerDisplay // 8 -> 0, 9 -> 1, ...
-
-	d.SetDigitOnDisplay(display, digitInDisplay, num, dot)
+	d.SetDigitOnDisplay(display, digitInDisplay, char, dot)
 }
 
 // ClearOnDisplay clears one of the two 8-digit displays.
@@ -241,7 +240,7 @@ func (d *Device) ClearOnDisplay(display int) {
 		return
 	}
 	for pos := 0; pos < MaxDigitsPerDisplay; pos++ {
-		d.SetDigitOnDisplay(display, pos, blankPatternIndex, false)
+		d.setPattern(display, pos, font[' '], false)
 	}
 }
 
@@ -285,10 +284,6 @@ func (d *Device) WriteString(display int, s string) {
 	for i := 0; i < len(runes) && digitPos < MaxDigitsPerDisplay; i++ {
 		// Convert to uppercase to match the font map keys
 		char := runes[i]
-		if char >= 'a' && char <= 'z' {
-			char = char - 'a' + 'A'
-		}
-
 		if pattern, ok := font[char]; ok {
 			dot := false
 			// Look ahead for a dot
